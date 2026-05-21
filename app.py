@@ -47,7 +47,14 @@ num_classes = len(class_indices)
 # BUILD MODEL
 # -----------------------------
 model = models.mobilenet_v2(weights=None)
-model.classifier[1] = nn.Linear(model.last_channel, num_classes)
+
+model.classifier = nn.Sequential(
+    nn.Dropout(p=0.2),
+    nn.Linear(model.last_channel, 256),
+    nn.ReLU(),
+    nn.Dropout(p=0.2),
+    nn.Linear(256, num_classes),
+)
 
 # -----------------------------
 # LOAD MODEL WEIGHTS

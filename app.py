@@ -15,15 +15,31 @@ CLASS_PATH = BASE_DIR / "ml_models" / "class_indices.json"
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-with open(CLASS_PATH, "r") as f:
-    class_indices = json.load(f)
+# Load checkpoint once at startup
+checkpoint = torch.load(MODEL_PATH, map_location=device)
 
-index_to_class = {v: k for k, v in class_indices.items()}
+# Load class mapping from checkpoint if available, otherwise from JSON
+if isinstance(checkpoint, dict) and "class_to_idx" in checkpoint:
+    class_indices = checkpoint["class_to_idx"]
+elif isinstance(checkpoint, dict) and "class_names" in checkpoint:
+    class_indices = {class_name: idx for idx, class_name in enumerate(checkpoint["class_names"])}
+else:
+    with open(CLASS_PATH, "r") as f:
+        class_indices = json.load(f)
+
+index_to_class = {int(v): k for k, v in class_indices.items()}
 num_classes = len(class_indices)
 
+# Build MobileNetV2 model
 model = models.mobilenet_v2(weights=None)
 model.classifier[1] = nn.Linear(model.last_channel, num_classes)
-model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
+
+# Load model weights correctly from checkpoint
+if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+    model.load_state_dict(checkpoint["model_state_dict"])
+else:
+    model.load_state_dict(checkpoint)
+
 model.to(device)
 model.eval()
 
@@ -42,7 +58,8 @@ def home():
     return jsonify({
         "status": "AgroGuide AI API running",
         "model": "MobileNetV2",
-        "classes": num_classes
+        "classes": num_classes,
+        "device": str(device)
     })
 
 
@@ -62,14 +79,16 @@ def predict():
             probabilities = torch.softmax(outputs, dim=1)
             confidence, predicted = torch.max(probabilities, 1)
 
-        predicted_index = predicted.item()
-        predicted_class = index_to_class[predicted_index]
-        confidence_score = round(confidence.item() * 100, 2)
+        predicted_index = int(predicted.item())
+        predicted_class = index_to_class.get(predicted_index, "unknown")
+        confidence_score = round(float(confidence.item()) * 100, 2)
 
         return jsonify({
             "success": True,
             "disease_class": predicted_class,
-            "confidence": confidence_score
+            "class_name": predicted_class,
+            "confidence": confidence_score,
+            "confidence_percent": confidence_score
         })
 
     except Exception as e:

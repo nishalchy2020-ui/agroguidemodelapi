@@ -3,7 +3,7 @@ from pathlib import Path
 
 import torch
 import torch.nn as nn
-from flask import Flask, request, jsonify
+from flask import Flask, jsonify, request
 from PIL import Image
 from torchvision import models, transforms
 
@@ -15,34 +15,55 @@ CLASS_PATH = BASE_DIR / "ml_models" / "class_indices.json"
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Load checkpoint once at startup
+# -----------------------------
+# LOAD CHECKPOINT
+# -----------------------------
 checkpoint = torch.load(MODEL_PATH, map_location=device)
 
-# Load class mapping from checkpoint if available, otherwise from JSON
+# -----------------------------
+# LOAD CLASS MAPPING
+# -----------------------------
 if isinstance(checkpoint, dict) and "class_to_idx" in checkpoint:
     class_indices = checkpoint["class_to_idx"]
+
 elif isinstance(checkpoint, dict) and "class_names" in checkpoint:
-    class_indices = {class_name: idx for idx, class_name in enumerate(checkpoint["class_names"])}
+    class_indices = {
+        class_name: idx
+        for idx, class_name in enumerate(checkpoint["class_names"])
+    }
+
 else:
     with open(CLASS_PATH, "r") as f:
         class_indices = json.load(f)
 
-index_to_class = {int(v): k for k, v in class_indices.items()}
+index_to_class = {
+    int(v): k
+    for k, v in class_indices.items()
+}
+
 num_classes = len(class_indices)
 
-# Build MobileNetV2 model
+# -----------------------------
+# BUILD MODEL
+# -----------------------------
 model = models.mobilenet_v2(weights=None)
 model.classifier[1] = nn.Linear(model.last_channel, num_classes)
 
-# Load model weights correctly from checkpoint
+# -----------------------------
+# LOAD MODEL WEIGHTS
+# -----------------------------
 if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
     model.load_state_dict(checkpoint["model_state_dict"])
+
 else:
     model.load_state_dict(checkpoint)
 
 model.to(device)
 model.eval()
 
+# -----------------------------
+# IMAGE TRANSFORM
+# -----------------------------
 transform = transforms.Compose([
     transforms.Resize((224, 224)),
     transforms.ToTensor(),
@@ -65,23 +86,38 @@ def home():
 
 @app.route("/predict", methods=["POST"])
 def predict():
+
     if "image" not in request.files:
-        return jsonify({"success": False, "error": "No image uploaded"}), 400
+        return jsonify({
+            "success": False,
+            "error": "No image uploaded"
+        }), 400
 
     file = request.files["image"]
 
     try:
         image = Image.open(file.stream).convert("RGB")
+
         image_tensor = transform(image).unsqueeze(0).to(device)
 
         with torch.no_grad():
             outputs = model(image_tensor)
+
             probabilities = torch.softmax(outputs, dim=1)
+
             confidence, predicted = torch.max(probabilities, 1)
 
         predicted_index = int(predicted.item())
-        predicted_class = index_to_class.get(predicted_index, "unknown")
-        confidence_score = round(float(confidence.item()) * 100, 2)
+
+        predicted_class = index_to_class.get(
+            predicted_index,
+            "unknown"
+        )
+
+        confidence_score = round(
+            float(confidence.item()) * 100,
+            2
+        )
 
         return jsonify({
             "success": True,
@@ -92,6 +128,7 @@ def predict():
         })
 
     except Exception as e:
+
         return jsonify({
             "success": False,
             "error": str(e)

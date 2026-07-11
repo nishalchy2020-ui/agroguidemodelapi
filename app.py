@@ -10,7 +10,7 @@ from torchvision import models, transforms
 app = Flask(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent
-MODEL_PATH = BASE_DIR / "ml_models" / "plant_disease_checkpoint.pth"
+MODEL_PATH = BASE_DIR / "ml_models" / "plant_disease_checkpoint_final.pth"
 CLASS_PATH = BASE_DIR / "ml_models" / "class_indices.json"
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

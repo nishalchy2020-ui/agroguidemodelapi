@@ -8,14 +8,12 @@ from torchvision import models, transforms
 
 app = Flask(__name__)
 
-
 # CONFIG
 
 BASE_DIR = Path(__file__).resolve().parent
 MODEL_PATH = BASE_DIR / "ml_models" / "plant_disease_checkpoint_final.pth"
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
 
 # LOAD CHECKPOINT
 
@@ -44,26 +42,21 @@ index_to_class = {
 
 num_classes = len(class_names)
 
-
 # BUILD MODEL
 
 model = models.mobilenet_v2(weights=None)
 
 model.classifier = nn.Sequential(
     nn.Dropout(0.2),
-    nn.Linear(model.last_channel, 256),
-    nn.ReLU(),
-    nn.Dropout(0.2),
-    nn.Linear(256, num_classes),
+    nn.Linear(model.last_channel, num_classes),
 )
 
-
-# LOAD WEIGHTS
+# LOAD MODEL WEIGHTS
 
 model.load_state_dict(checkpoint["model_state_dict"])
+
 model.to(device)
 model.eval()
-
 
 # IMAGE TRANSFORM
 
@@ -71,11 +64,10 @@ transform = transforms.Compose([
     transforms.Resize((224, 224)),
     transforms.ToTensor(),
     transforms.Normalize(
-        mean=[0.485, 0.456, 0.406],
-        std=[0.229, 0.224, 0.225],
-    ),
+        [0.485, 0.456, 0.406],
+        [0.229, 0.224, 0.225]
+    )
 ])
-
 
 # ROUTES
 
@@ -85,7 +77,7 @@ def home():
         "status": "AgroGuide AI API running",
         "model": "MobileNetV2",
         "classes": num_classes,
-        "device": str(device),
+        "device": str(device)
     })
 
 
@@ -105,26 +97,31 @@ def predict():
 
         with torch.no_grad():
             outputs = model(image_tensor)
+
             probabilities = torch.softmax(outputs, dim=1)
+
             confidence, predicted = torch.max(probabilities, dim=1)
 
         predicted_index = predicted.item()
 
+        predicted_class = index_to_class[predicted_index]
+
+        confidence_score = round(confidence.item() * 100, 2)
+
         return jsonify({
             "success": True,
-            "disease_class": index_to_class[predicted_index],
-            "class_name": index_to_class[predicted_index],
-            "confidence": round(confidence.item() * 100, 2),
-            "confidence_percent": round(confidence.item() * 100, 2),
+            "disease_class": predicted_class,
+            "class_name": predicted_class,
+            "confidence": confidence_score,
+            "confidence_percent": confidence_score
         })
 
     except Exception as e:
+
         return jsonify({
             "success": False,
             "error": str(e)
         }), 500
-
-
 
 # MAIN
 
